@@ -1,0 +1,161 @@
+
+```{r}
+library(openintro)
+library(tidyverse)
+library(tidymodels)
+library(ggpubr)
+library(pscl)
+library(forcats)
+theme_set(theme_bw())
+```
+
+```{r}
+alunos = read_csv(here::here("data/alunos_raiox.csv"), show_col_types = FALSE)
+
+glimpse(alunos)
+```
+
+```{r}
+alunos = alunos %>% 
+    mutate(ano_ingresso = as.integer(periodo_ingresso))
+    
+
+glimpse(alunos)
+```
+
+
+```{r}
+alunos %>% 
+    filter(ano_ingresso >= 2006) %>% 
+    filter(sexo == "Feminino") %>% 
+    ggplot(aes(x = ano_ingresso, fill = nome_cor)) +
+    geom_bar(position = "stack", alpha = 0.9) +
+    geom_text(aes(label=..count..), stat='count', position = position_stack(vjust = 0.5)) +
+    scale_fill_brewer(palette = "Set2") +
+    xlab("Ano") + 
+    ylab("Quantidade de integrantes") +
+    labs(fill = "Raça") +
+    scale_x_continuous(breaks = c(2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020))
+```
+
+```{r} 
+alunos %>% 
+    filter(ano_ingresso >= 2006) %>% 
+    filter(forma_reserva_vagas != "Sem Reserva De Vagas") %>% 
+    filter(sexo == "Feminino") %>% 
+    ggplot(aes(x = forcats::fct_infreq(forma_reserva_vagas))) + 
+    geom_bar(alpha = 0.7, fill = "orange") +
+    coord_flip() +
+    geom_text(aes(label=..count..), stat='count', position = position_stack(vjust = 0.5)) +
+    xlab("Tipo de cota utilizada") + 
+    ylab("Quantidade de vagas utilizadas")
+    
+```
+
+```{r}
+alunos = alunos %>% 
+    mutate(faixa_etaria = ifelse(idade_ingresso >= 16 & idade_ingresso <= 19, "16 - 19", 
+                                 ifelse(idade_ingresso >= 20 & idade_ingresso <= 24, "20 - 24",
+                                        ifelse(idade_ingresso >= 25 & idade_ingresso <= 29, "25 - 29", "+29"))))
+
+alunos %>%
+    filter(sexo == "Feminino") %>% 
+    ggplot(aes(x = forcats::fct_infreq(faixa_etaria))) + 
+    geom_bar(alpha = 0.5, fill = "darkGreen") +
+    coord_flip() +
+    geom_text(aes(label=..count..), stat='count', position = position_stack(vjust = 0.5)) +
+    xlab("Faixa etária") + 
+    ylab("Quantidade de integrantes")
+    
+```
+
+```{r}
+historico = read_csv(here::here("data/historico_alunos_raiox.csv"), show_col_types = FALSE)
+
+glimpse(historico)
+```
+
+```{r}
+historico = historico %>%
+    filter(periodo_ingresso >= 2006.1) %>%
+    mutate(reprovado = ifelse(situacao == 'Aprovado', 0, 1)) %>% 
+    group_by(nome_disciplina) %>% 
+    mutate(taxa_retencao = sum(reprovado)/n()) %>% 
+    mutate(taxa_reprovado = sum(reprovado)) %>% 
+    mutate(taxa_total = n())
+
+glimpse(historico)
+```
+
+```{r}
+retencao = historico %>%
+    filter(taxa_total > 500) %>% 
+    distinct(nome_disciplina, taxa_retencao, taxa_reprovado, taxa_total, codigo_disciplina, reprovado, id)
+
+glimpse(retencao)
+
+# disciplinas escolhidas: calculo diferencial e integral I, laboratório de programação I
+```
+
+```{r}
+calculo = historico %>% 
+    filter(codigo_disciplina == 1109103)
+
+calculo = semi_join(calculo, historico, by = "id") %>% 
+    mutate(sexo_n = ifelse(sexo == "Feminino", 1, 0)) %>% 
+    mutate(cota_n = ifelse(forma_reserva_vagas == "Sem Reserva De Vagas", 0, 1)) %>%
+    mutate(aprovado = ifelse(reprovado == 1, 0, 1))
+
+glimpse(calculo)
+```
+
+```{r}
+model <- glm(aprovado ~ sexo_n + cota_n + nome_cor + idade_ingresso + apv_media_geral, data = calculo, family = binomial)
+
+tidy(model, conf.int = TRUE, exponentiate = TRUE) %>% select(-p.value)
+glance(model)
+pR2(model)
+```
+
+```{r}
+tidy(model, conf.int = T) %>% 
+  filter(term != "(Intercept)") %>% 
+  ggplot(aes(x = reorder(term, estimate) , y = estimate, ymin = conf.low, ymax = conf.high)) +
+  geom_linerange() +
+  geom_point() +
+  xlab("term") +
+  coord_flip()
+```
+
+
+```{r}
+lp1 = historico %>% 
+    filter(codigo_disciplina == 1411180)
+
+lp1 = semi_join(lp1, historico, by = "id") %>% 
+    mutate(sexo_n = ifelse(sexo == "Feminino", 1, 0)) %>% 
+    mutate(cota_n = ifelse(forma_reserva_vagas == "Sem Reserva De Vagas", 0, 1)) %>%
+    mutate(aprovado = ifelse(reprovado == 1, 0, 1))
+
+glimpse(lp1)
+```
+
+```{r}
+modelprog <- glm(aprovado ~ sexo_n + cota_n + nome_cor + idade_ingresso + apv_media_geral, data = lp1, family = binomial)
+
+tidy(modelprog, conf.int = TRUE, exponentiate = TRUE) %>% select(-p.value)
+glance(modelprog)
+pR2(modelprog)
+```
+
+```{r}
+tidy(modelprog, conf.int = T) %>% 
+  filter(term != "(Intercept)") %>%
+  filter(term != "nome_corIndígena") %>%
+  ggplot(aes(x = reorder(term, estimate) , y = estimate, ymin = conf.low, ymax = conf.high)) +
+  geom_linerange() +
+  geom_point() +
+  xlab("term") +
+  coord_flip()
+```
+
